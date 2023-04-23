@@ -57,6 +57,7 @@ struct f_ncm {
 	struct usb_ep			*notify;
 	struct usb_request		*notify_req;
 	u8				notify_state;
+	atomic_t			notify_count;
 	bool				is_open;
 
 	const struct ndp_parser_opts	*parser_opts;
@@ -335,7 +336,6 @@ static struct usb_descriptor_header *ncm_hs_function[] = {
 	NULL,
 };
 
-
 /* super speed support: */
 
 static struct usb_endpoint_descriptor ss_ncm_notify_desc = {
@@ -552,7 +552,7 @@ static void ncm_do_notify(struct f_ncm *ncm)
 	int				status;
 
 	/* notification already in flight? */
-	if (!req)
+	if (atomic_read(&ncm->notify_count))
 		return;
 
 	event = req->buf;
@@ -592,7 +592,8 @@ static void ncm_do_notify(struct f_ncm *ncm)
 	event->bmRequestType = 0xA1;
 	event->wIndex = cpu_to_le16(ncm->ctrl_id);
 
-	ncm->notify_req = NULL;
+	atomic_inc(&ncm->notify_count);
+
 	/*
 	 * In double buffering if there is a space in FIFO,
 	 * completion callback can be called right after the call,
@@ -602,7 +603,7 @@ static void ncm_do_notify(struct f_ncm *ncm)
 	status = usb_ep_queue(ncm->notify, req, GFP_ATOMIC);
 	spin_lock(&ncm->lock);
 	if (status < 0) {
-		ncm->notify_req = req;
+		atomic_dec(&ncm->notify_count);
 		DBG(cdev, "notify --> %d\n", status);
 	}
 }
@@ -637,17 +638,19 @@ static void ncm_notify_complete(struct usb_ep *ep, struct usb_request *req)
 	case 0:
 		VDBG(cdev, "Notification %02x sent\n",
 		     event->bNotificationType);
+		atomic_dec(&ncm->notify_count);
 		break;
 	case -ECONNRESET:
 	case -ESHUTDOWN:
+		atomic_set(&ncm->notify_count, 0);
 		ncm->notify_state = NCM_NOTIFY_NONE;
 		break;
 	default:
 		DBG(cdev, "event %02x --> %d\n",
 			event->bNotificationType, req->status);
+		atomic_dec(&ncm->notify_count);
 		break;
 	}
-	ncm->notify_req = req;
 	ncm_do_notify(ncm);
 	spin_unlock(&ncm->lock);
 }
@@ -1489,7 +1492,8 @@ static int ncm_bind(struct usb_configuration *c, struct usb_function *f)
 	ncm->notify_req = usb_ep_alloc_request(ep, GFP_KERNEL);
 	if (!ncm->notify_req)
 		goto fail;
-	ncm->notify_req->buf = kmalloc(NCM_STATUS_BYTECOUNT, GFP_KERNEL);
+	ncm->notify_req->buf = kmalloc(NCM_STATUS_BYTECOUNT
+			+ (cdev->gadget->extra_buf_alloc), GFP_KERNEL);
 	if (!ncm->notify_req->buf)
 		goto fail;
 	ncm->notify_req->context = ncm;
@@ -1581,9 +1585,57 @@ static struct config_item_type ncm_func_type = {
 	.ct_owner	= THIS_MODULE,
 };
 
+#ifdef CONFIG_USB_CONFIGFS_UEVENT
+
+struct ncm_setup_desc {
+	struct work_struct work;
+	struct device *device;
+	uint8_t major; // Mirror Link major version
+	uint8_t minor; // Mirror Link minor version
+};
+
+static struct ncm_setup_desc *_ncm_setup_desc;
+
+#define MIRROR_LINK_STRING_LENGTH_MAX 32
+static void ncm_setup_work(struct work_struct *data)
+{
+	char mirror_link_string[MIRROR_LINK_STRING_LENGTH_MAX];
+	char *envp[2] = { mirror_link_string, NULL };
+
+	snprintf(mirror_link_string, MIRROR_LINK_STRING_LENGTH_MAX,
+		"MirrorLink=V%d.%d",
+		_ncm_setup_desc->major, _ncm_setup_desc->minor);
+	kobject_uevent_env(&_ncm_setup_desc->device->kobj, KOBJ_CHANGE, envp);
+}
+
+int ncm_ctrlrequest(struct usb_composite_dev *cdev,
+			const struct usb_ctrlrequest *ctrl)
+{
+	int value = -EOPNOTSUPP;
+
+	if (ctrl->bRequestType == 0x40 && ctrl->bRequest == 0xF0
+			&& _ncm_setup_desc) {
+		_ncm_setup_desc->minor = (uint8_t)(ctrl->wValue >> 8);
+		_ncm_setup_desc->major = (uint8_t)(ctrl->wValue & 0xFF);
+		schedule_work(&_ncm_setup_desc->work);
+		value = 0;
+	}
+
+	return value;
+}
+#endif
+
 static void ncm_free_inst(struct usb_function_instance *f)
 {
 	struct f_ncm_opts *opts;
+
+#ifdef CONFIG_USB_CONFIGFS_UEVENT
+	/* release _ncm_setup_desc related resource */
+	device_destroy(_ncm_setup_desc->device->class,
+		_ncm_setup_desc->device->devt);
+	cancel_work(&_ncm_setup_desc->work);
+	kfree(_ncm_setup_desc);
+#endif
 
 	opts = container_of(f, struct f_ncm_opts, func_inst);
 	if (opts->bound)
@@ -1605,11 +1657,20 @@ static struct usb_function_instance *ncm_alloc_inst(void)
 	opts->net = gether_setup_default();
 	if (IS_ERR(opts->net)) {
 		struct net_device *net = opts->net;
+
 		kfree(opts);
 		return ERR_CAST(net);
 	}
 
 	config_group_init_type_name(&opts->func_inst.group, "", &ncm_func_type);
+
+#ifdef CONFIG_USB_CONFIGFS_UEVENT
+	_ncm_setup_desc = kzalloc(sizeof(*_ncm_setup_desc), GFP_KERNEL);
+	if (!_ncm_setup_desc)
+		return ERR_PTR(-ENOMEM);
+	INIT_WORK(&_ncm_setup_desc->work, ncm_setup_work);
+	_ncm_setup_desc->device = create_function_device("f_ncm");
+#endif
 
 	return &opts->func_inst;
 }
@@ -1638,6 +1699,11 @@ static void ncm_unbind(struct usb_configuration *c, struct usb_function *f)
 
 	ncm_string_defs[0].id = 0;
 	usb_free_all_descriptors(f);
+
+	if (atomic_read(&ncm->notify_count)) {
+		usb_ep_dequeue(ncm->notify, ncm->notify_req);
+		atomic_set(&ncm->notify_count, 0);
+	}
 
 	kfree(ncm->notify_req->buf);
 	usb_ep_free_request(ncm->notify, ncm->notify_req);

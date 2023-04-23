@@ -361,6 +361,25 @@ config GPIO_PXA
 	help
 	  Say yes here to support the PXA GPIO device
 
+config GPIO_QPNP_PIN
+	tristate "Qualcomm Technologies, Inc. QPNP GPIO support"
+	depends on SPMI
+	help
+	  Say 'y' here to include support for the Qualcomm Technologies, Inc.
+	  QPNP GPIO driver.  This driver supports Device Tree and allows a
+	  device_node to be registered as a gpio-controller.  It does not handle
+	  GPIO interrupts directly; they are handled via the SPMI arbiter
+	  interrupt driver.
+
+config GPIO_QPNP_PIN_DEBUG
+	bool "Qualcomm Technologies, Inc. QPNP GPIO debug support"
+	depends on GPIO_QPNP_PIN && DEBUG_FS
+	help
+	  Say 'y' here to include debug support for the Qualcomm Technologies,
+	  Inc. QPNP GPIO driver.  This provides a userspace debug interface to
+	  get and set all of the supported features of PMIC GPIO and MPP pins
+	  including those which are managed by the gpio framework.
+
 config GPIO_RCAR
 	tristate "Renesas R-Car GPIO"
 	depends on ARCH_RENESAS || COMPILE_TEST
@@ -919,6 +938,7 @@ config GPIO_LP873X
 config GPIO_MAX77620
 	tristate "GPIO support for PMIC MAX77620 and MAX20024"
 	depends on MFD_MAX77620
+	select GPIOLIB_IRQCHIP
 	help
 	  GPIO driver for MAX77620 and MAX20024 PMIC from Maxim Semiconductor.
 	  MAX77620 PMIC has 8 pins that can be configured as GPIOs. The

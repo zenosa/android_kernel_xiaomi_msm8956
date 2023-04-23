@@ -132,25 +132,25 @@ int __init security_module_enable(const char *module)
 
 /* Security operations */
 
-int security_binder_set_context_mgr(const struct cred *mgr)
+int security_binder_set_context_mgr(struct task_struct *mgr)
 {
 	return call_int_hook(binder_set_context_mgr, 0, mgr);
 }
 
-int security_binder_transaction(const struct cred *from,
-				const struct cred *to)
+int security_binder_transaction(struct task_struct *from,
+				struct task_struct *to)
 {
 	return call_int_hook(binder_transaction, 0, from, to);
 }
 
-int security_binder_transfer_binder(const struct cred *from,
-				    const struct cred *to)
+int security_binder_transfer_binder(struct task_struct *from,
+				    struct task_struct *to)
 {
 	return call_int_hook(binder_transfer_binder, 0, from, to);
 }
 
-int security_binder_transfer_file(const struct cred *from,
-				  const struct cred *to, struct file *file)
+int security_binder_transfer_file(struct task_struct *from,
+				  struct task_struct *to, struct file *file)
 {
 	return call_int_hook(binder_transfer_file, 0, from, to, file);
 }
@@ -524,6 +524,14 @@ int security_inode_create(struct inode *dir, struct dentry *dentry, umode_t mode
 	return call_int_hook(inode_create, 0, dir, dentry, mode);
 }
 EXPORT_SYMBOL_GPL(security_inode_create);
+
+int security_inode_post_create(struct inode *dir, struct dentry *dentry,
+			       umode_t mode)
+{
+	if (unlikely(IS_PRIVATE(dir)))
+		return 0;
+	return call_int_hook(inode_post_create, 0, dir, dentry, mode);
+}
 
 int security_inode_link(struct dentry *old_dentry, struct inode *dir,
 			 struct dentry *new_dentry)
@@ -1629,7 +1637,7 @@ void security_bpf_prog_free(struct bpf_prog_aux *aux)
 }
 #endif /* CONFIG_BPF_SYSCALL */
 
-struct security_hook_heads security_hook_heads = {
+struct security_hook_heads security_hook_heads __lsm_ro_after_init = {
 	.binder_set_context_mgr =
 		LIST_HEAD_INIT(security_hook_heads.binder_set_context_mgr),
 	.binder_transaction =
@@ -1707,6 +1715,8 @@ struct security_hook_heads security_hook_heads = {
 	.inode_init_security =
 		LIST_HEAD_INIT(security_hook_heads.inode_init_security),
 	.inode_create =	LIST_HEAD_INIT(security_hook_heads.inode_create),
+	.inode_post_create =
+		LIST_HEAD_INIT(security_hook_heads.inode_post_create),
 	.inode_link =	LIST_HEAD_INIT(security_hook_heads.inode_link),
 	.inode_unlink =	LIST_HEAD_INIT(security_hook_heads.inode_unlink),
 	.inode_symlink =

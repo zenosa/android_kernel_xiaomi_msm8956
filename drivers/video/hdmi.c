@@ -538,6 +538,10 @@ hdmi_picture_aspect_get_name(enum hdmi_picture_aspect picture_aspect)
 		return "4:3";
 	case HDMI_PICTURE_ASPECT_16_9:
 		return "16:9";
+	case HDMI_PICTURE_ASPECT_64_27:
+		return "64:27";
+	case HDMI_PICTURE_ASPECT_256_135:
+		return "256:135";
 	case HDMI_PICTURE_ASPECT_RESERVED:
 		return "Reserved";
 	}
@@ -1032,12 +1036,12 @@ static int hdmi_avi_infoframe_unpack(struct hdmi_avi_infoframe *frame,
 	if (ptr[0] & 0x10)
 		frame->active_aspect = ptr[1] & 0xf;
 	if (ptr[0] & 0x8) {
-		frame->top_bar = (ptr[5] << 8) + ptr[6];
-		frame->bottom_bar = (ptr[7] << 8) + ptr[8];
+		frame->top_bar = (ptr[6] << 8) | ptr[5];
+		frame->bottom_bar = (ptr[8] << 8) | ptr[7];
 	}
 	if (ptr[0] & 0x4) {
-		frame->left_bar = (ptr[9] << 8) + ptr[10];
-		frame->right_bar = (ptr[11] << 8) + ptr[12];
+		frame->left_bar = (ptr[10] << 8) | ptr[9];
+		frame->right_bar = (ptr[12] << 8) | ptr[11];
 	}
 	frame->scan_mode = ptr[0] & 0x3;
 

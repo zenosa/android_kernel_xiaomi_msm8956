@@ -489,10 +489,8 @@ static int prism2_connect(struct wiphy *wiphy, struct net_device *dev,
 	/* Set the encryption - we only support wep */
 	if (is_wep) {
 		if (sme->key) {
-			if (sme->key_idx >= NUM_WEPKEYS) {
-				err = -EINVAL;
-				goto exit;
-			}
+			if (sme->key_idx >= NUM_WEPKEYS)
+				return -EINVAL;
 
 			result = prism2_domibset_uint32(wlandev,
 				DIDmib_dot11smt_dot11PrivacyTable_dot11WEPDefaultKeyID,
@@ -666,8 +664,11 @@ void prism2_disconnected(struct wlandevice *wlandev)
 
 void prism2_roamed(struct wlandevice *wlandev)
 {
-	cfg80211_roamed(wlandev->netdev, NULL, wlandev->bssid,
-		NULL, 0, NULL, 0, GFP_KERNEL);
+	struct cfg80211_roam_info roam_info = {
+		.bssid = wlandev->bssid,
+	};
+
+	cfg80211_roamed(wlandev->netdev, &roam_info, GFP_KERNEL);
 }
 
 /* Structures for declaring wiphy interface */

@@ -30,19 +30,6 @@ static int qfprom_reg_read(void *context,
 	return 0;
 }
 
-static int qfprom_reg_write(void *context,
-			 unsigned int reg, void *_val, size_t bytes)
-{
-	void __iomem *base = context;
-	u32 *val = _val;
-	int i = 0, words = bytes / 4;
-
-	while (words--)
-		writel(*val++, base + reg + (i++ * 4));
-
-	return 0;
-}
-
 static int qfprom_remove(struct platform_device *pdev)
 {
 	struct nvmem_device *nvmem = platform_get_drvdata(pdev);
@@ -56,7 +43,6 @@ static struct nvmem_config econfig = {
 	.stride = 4,
 	.word_size = 1,
 	.reg_read = qfprom_reg_read,
-	.reg_write = qfprom_reg_write,
 };
 
 static int qfprom_probe(struct platform_device *pdev)
@@ -98,7 +84,26 @@ static struct platform_driver qfprom_driver = {
 		.of_match_table = qfprom_of_match,
 	},
 };
-module_platform_driver(qfprom_driver);
+
+static int __init qfprom_init(void)
+{
+	int ret;
+
+	ret = platform_driver_register(&qfprom_driver);
+	if (ret != 0)
+		pr_err("Failed to register qfprom driver\n");
+
+	return ret;
+}
+
+static void __exit qfprom_exit(void)
+{
+	return platform_driver_unregister(&qfprom_driver);
+}
+
+subsys_initcall(qfprom_init);
+module_exit(qfprom_exit);
+
 MODULE_AUTHOR("Srinivas Kandagatla <srinivas.kandagatla@linaro.org>");
 MODULE_DESCRIPTION("Qualcomm QFPROM driver");
 MODULE_LICENSE("GPL v2");

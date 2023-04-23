@@ -152,6 +152,12 @@ static int sync_file_set_fence(struct sync_file *sync_file,
 			return -ENOMEM;
 
 		sync_file->fence = &array->base;
+
+		/*
+		 * Register for callbacks so that we know when each fence
+		 * in the array is signaled
+		 */
+		fence_enable_sw_signaling(sync_file->fence);
 	}
 
 	return 0;
@@ -204,7 +210,7 @@ static struct sync_file *sync_file_merge(const char *name, struct sync_file *a,
 	a_fences = get_fences(a, &a_num_fences);
 	b_fences = get_fences(b, &b_num_fences);
 	if (a_num_fences > INT_MAX - b_num_fences)
-		return NULL;
+		goto err;
 
 	num_fences = a_num_fences + b_num_fences;
 

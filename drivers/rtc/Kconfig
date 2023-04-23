@@ -304,6 +304,7 @@ config RTC_DRV_MAX6900
 config RTC_DRV_MAX8907
 	tristate "Maxim MAX8907"
 	depends on MFD_MAX8907
+	select REGMAP_IRQ
 	help
 	  If you say yes here you will get support for the
 	  RTC of Maxim MAX8907 PMIC.
@@ -1588,6 +1589,15 @@ config RTC_DRV_PM8XXX
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called rtc-pm8xxx.
+
+config RTC_DRV_QPNP
+	tristate "Qualcomm Technologies, Inc. QPNP PMIC RTC"
+	depends on SPMI
+	help
+	  This enables support for the RTC found on Qualcomm Technologies, Inc.
+	  QPNP PMIC chips.  This driver supports using the PMIC RTC peripheral
+	  to wake a mobile device up from suspend or to wake it up from power-
+	  off.
 
 config RTC_DRV_TEGRA
 	tristate "NVIDIA Tegra Internal RTC driver"
